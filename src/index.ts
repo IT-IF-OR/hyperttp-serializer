@@ -1,1 +1,1 @@
-export { withSerializer, SerializerPlugin } from "./plugin.js";
+export { withSerializer } from "./plugin.js";
