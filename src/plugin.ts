@@ -21,7 +21,7 @@ export function withSerializer(): HyperPlugin {
     enabled: () => true,
 
     wrapDispatch: (next) => {
-      return async <T>(req: InternalRequest): Promise<HttpResponse<T>> => {
+      return <T>(req: InternalRequest): Promise<HttpResponse<T>> => {
         if (!req.body) {
           return next<T>(req);
         }
