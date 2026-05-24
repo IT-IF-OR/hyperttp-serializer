@@ -5,9 +5,9 @@ import type {
 } from "@hyperttp/core";
 
 export interface SerializableRequest extends InternalRequest {
-  meta?: InternalRequest["meta"] & {
+  meta: InternalRequest["meta"] & {
     trackTimings?: boolean;
-    timings?: {
+    timings: {
       networkMs?: number;
       serializationMs?: number;
     };
@@ -22,14 +22,14 @@ export function withSerializer(): HyperPlugin {
 
     wrapDispatch: (next) => {
       return <T>(req: InternalRequest): Promise<HttpResponse<T>> => {
-        if (!req.body) {
+        const body = req.body;
+        if (!body) {
           return next<T>(req);
         }
 
-        const body = req.body;
-
         const isObject =
           typeof body === "object" &&
+          body !== null &&
           !Buffer.isBuffer(body) &&
           !(body instanceof Uint8Array) &&
           typeof (body as any).pipe !== "function";
@@ -37,16 +37,10 @@ export function withSerializer(): HyperPlugin {
         if (isObject) {
           const serializableReq = req as SerializableRequest;
 
-          const isLogging = serializableReq.meta?.trackTimings;
+          const isLogging = serializableReq.meta?.trackTimings === true;
           const start = isLogging ? process.hrtime.bigint() : 0n;
 
-          const rawContentType =
-            serializableReq.headers["content-type"] ||
-            serializableReq.headers["Content-Type"];
-          const contentType =
-            typeof rawContentType === "string"
-              ? rawContentType.toLowerCase()
-              : null;
+          const contentType = serializableReq.headers["content-type"];
 
           if (!contentType || contentType.includes("application/json")) {
             serializableReq.headers["content-type"] = "application/json";
@@ -58,13 +52,8 @@ export function withSerializer(): HyperPlugin {
           }
 
           if (isLogging) {
-            const end = process.hrtime.bigint();
-
-            serializableReq.meta = serializableReq.meta || {};
-            serializableReq.meta.timings = serializableReq.meta.timings || {};
-
             serializableReq.meta.timings.serializationMs =
-              Number(end - start) / 1e6;
+              Number(process.hrtime.bigint() - start) / 1e6;
           }
         }
 
