@@ -1,38 +1,63 @@
 import type { HyperPlugin, InternalRequest } from "@hyperttp/types";
 
 /**
- * @ru Расширенный интерфейс запроса с типизированными метаданными для замера производительности.
- * @en Extended request interface with strongly-typed metadata for performance monitoring.
+ * @en Extended internal request interface with serialization timing metadata.
+ * @ru Расширенный интерфейс внутреннего запроса с метаданными времени сериализации.
  */
 export interface SerializableRequest extends InternalRequest {
+  /**
+   * @en Metadata including timing tracking flags and measurements.
+   * @ru Метаданные, включая флаги отслеживания времени и измерения.
+   */
   meta: NonNullable<InternalRequest["meta"]> & {
+    /**
+     * @en Flag to enable timing measurements for this request.
+     * @ru Флаг для включения измерений времени для этого запроса.
+     */
     trackTimings?: boolean;
+
+    /**
+     * @en Object containing measured durations for various stages.
+     * @ru Объект, содержащий измеренные длительности различных этапов.
+     */
     timings?: {
+      /**
+       * @en Time spent on network operations in milliseconds.
+       * @ru Время, затраченное на сетевые операции, в миллисекундах.
+       */
       networkMs?: number;
+
+      /**
+       * @en Time spent on request body serialization in milliseconds.
+       * @ru Время, затраченное на сериализацию тела запроса, в миллисекундах.
+       */
       serializationMs?: number;
     };
   };
 }
 
 /**
- * @ru Плагин автоматической сериализации тела запроса (JSON / URL-encoded) с расчетом времени выполнения.
- * @en Automatic request body serialization plugin (JSON / URL-encoded) with execution benchmarking.
- * @returns HyperPlugin object instance.
+ * @en Creates a plugin that automatically serializes request bodies (JSON or Form URL-encoded) based on Content-Type.
+ * Also supports optional timing metrics for the serialization process.
+ * @ru Создает плагин, который автоматически сериализует тела запросов (JSON или Form URL-encoded) на основе Content-Type.
+ * Также поддерживает опциональные метрики времени для процесса сериализации.
+ * @returns The configured HyperPlugin instance.
  */
 export function withSerializer(): HyperPlugin {
   return {
     name: "hyperttp-serializer",
 
     /**
-     * @ru Проверяет, включен ли плагин по умолчанию.
-     * @en Verifies whether the plugin is enabled by default.
+     * @en This plugin is always enabled by default.
+     * @ru Этот плагин всегда включен по умолчанию.
+     * @returns True.
      */
-    enabled: (): boolean => true,
+    enabled: () => true,
 
     /**
-     * @ru Перехватчик фазы запроса. Определяет тип данных и трансформирует объект в строку перед отправкой.
-     * @en Request phase interceptor. Inspects data layout and transforms objects into raw strings before flight.
-     * @param req - Contextual internal request options.
+     * @en Intercepts outgoing requests to serialize object bodies into strings or URLSearchParams.
+     * @ru Перехватывает исходящие запросы для сериализации объектных тел в строки или URLSearchParams.
+     * @param req - The internal request object.
      */
     onRequest(req: InternalRequest): void {
       const { body } = req;
@@ -43,52 +68,55 @@ export function withSerializer(): HyperPlugin {
         body !== null &&
         !Buffer.isBuffer(body) &&
         !(body instanceof Uint8Array) &&
-        !(
-          "pipe" in body &&
-          typeof (body as Record<string, unknown>).pipe === "function"
-        );
+        !("pipe" in body && typeof (body as any).pipe === "function");
 
       if (isObject) {
         const serializableReq = req as SerializableRequest;
-
         const isLogging = serializableReq.meta?.trackTimings === true;
-        if (isLogging && !serializableReq.meta.timings) {
-          serializableReq.meta.timings = {};
+
+        if (isLogging) {
+          serializableReq.meta.timings = serializableReq.meta.timings ?? {};
         }
 
-        const start = isLogging ? process.hrtime.bigint() : 0n;
+        const start = isLogging ? performance.now() : 0;
+
         const headers = serializableReq.headers as Record<
           string,
-          string | string[] | undefined
+          string | string[]
         >;
 
-        let contentType: string | undefined;
-        if (typeof headers.get === "function") {
-          contentType =
-            (headers as unknown as Headers).get("content-type") || undefined;
-        } else {
-          const rawType = headers["content-type"] || headers["Content-Type"];
-          contentType = Array.isArray(rawType) ? rawType[0] : rawType;
-        }
+        /**
+         * @en Helper to retrieve a header value case-insensitively.
+         * @ru Вспомогательная функция для получения значения заголовка без учета регистра.
+         * @param name - The header name.
+         * @returns The header value or undefined.
+         */
+        const getHeader = (name: string): string | undefined => {
+          if (typeof (headers as any).get === "function") {
+            return (headers as any).get(name);
+          }
+          const val = headers[name] || headers[name.toLowerCase()];
+          return Array.isArray(val) ? val[0] : val;
+        };
+
+        const contentType = getHeader("content-type");
 
         if (!contentType || contentType.includes("application/json")) {
-          if (typeof headers.set === "function") {
-            (headers as unknown as Headers).set(
-              "content-type",
-              "application/json",
-            );
+          if (typeof (headers as any).set === "function") {
+            (headers as any).set("content-type", "application/json");
           } else {
             headers["content-type"] = "application/json";
           }
           serializableReq.body = JSON.stringify(body);
         } else if (contentType.includes("application/x-www-form-urlencoded")) {
-          const recordBody = body as Record<string, string>;
-          serializableReq.body = new URLSearchParams(recordBody).toString();
+          serializableReq.body = new URLSearchParams(
+            body as Record<string, string>,
+          ).toString();
         }
 
         if (isLogging && serializableReq.meta.timings) {
           serializableReq.meta.timings.serializationMs =
-            Number(process.hrtime.bigint() - start) / 1e6;
+            performance.now() - start;
         }
       }
     },
