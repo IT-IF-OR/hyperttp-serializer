@@ -1,46 +1,22 @@
 import type { HyperPlugin, InternalRequest } from "@hyperttp/types";
 
 /**
- * @en Extended internal request interface with serialization timing metadata.
  * @ru Расширенный интерфейс внутреннего запроса с метаданными времени сериализации.
+ * @en Extended internal request interface with serialization timing metadata.
  */
 export interface SerializableRequest extends InternalRequest {
-  /**
-   * @en Metadata including timing tracking flags and measurements.
-   * @ru Метаданные, включая флаги отслеживания времени и измерения.
-   */
-  meta: NonNullable<InternalRequest["meta"]> & {
-    /**
-     * @en Flag to enable timing measurements for this request.
-     * @ru Флаг для включения измерений времени для этого запроса.
-     */
-    trackTimings?: boolean;
-
-    /**
-     * @en Object containing measured durations for various stages.
-     * @ru Объект, содержащий измеренные длительности различных этапов.
-     */
+  meta?: InternalRequest["meta"] & {
     timings?: {
-      /**
-       * @en Time spent on network operations in milliseconds.
-       * @ru Время, затраченное на сетевые операции, в миллисекундах.
-       */
-      networkMs?: number;
-
-      /**
-       * @en Time spent on request body serialization in milliseconds.
-       * @ru Время, затраченное на сериализацию тела запроса, в миллисекундах.
-       */
       serializationMs?: number;
     };
   };
 }
 
 /**
- * @en Creates a plugin that automatically serializes request bodies (JSON or Form URL-encoded) based on Content-Type.
- * Also supports optional timing metrics for the serialization process.
- * @ru Создает плагин, который автоматически сериализует тела запросов (JSON или Form URL-encoded) на основе Content-Type.
- * Также поддерживает опциональные метрики времени для процесса сериализации.
+ * @ru Создает плагин, который автоматически сериализует тела запросов (JSON или Form URL-encoded)
+ * на основе Content-Type и измеряет время этой операции.
+ * @en Creates a plugin that automatically serializes request bodies (JSON or Form URL-encoded)
+ * based on Content-Type and measures the time of this operation.
  * @returns The configured HyperPlugin instance.
  */
 export function withSerializer(): HyperPlugin {
@@ -48,15 +24,14 @@ export function withSerializer(): HyperPlugin {
     name: "hyperttp-serializer",
 
     /**
-     * @en This plugin is always enabled by default.
      * @ru Этот плагин всегда включен по умолчанию.
-     * @returns True.
+     * @en This plugin is always enabled by default.
      */
     enabled: () => true,
 
     /**
-     * @en Intercepts outgoing requests to serialize object bodies into strings or URLSearchParams.
-     * @ru Перехватывает исходящие запросы для сериализации объектных тел в строки или URLSearchParams.
+     * @ru Перехватывает исходящие запросы для сериализации объектных тел.
+     * @en Intercepts outgoing requests to serialize object bodies.
      * @param req - The internal request object.
      */
     onRequest(req: InternalRequest): void {
@@ -66,37 +41,44 @@ export function withSerializer(): HyperPlugin {
       const isObject =
         typeof body === "object" &&
         body !== null &&
-        !Buffer.isBuffer(body) &&
         !(body instanceof Uint8Array) &&
+        !(body instanceof ArrayBuffer) &&
+        !(
+          typeof URLSearchParams !== "undefined" &&
+          body instanceof URLSearchParams
+        ) &&
+        !(typeof FormData !== "undefined" && body instanceof FormData) &&
+        !(typeof Blob !== "undefined" && body instanceof Blob) &&
         !("pipe" in body && typeof (body as any).pipe === "function");
 
       if (isObject) {
         const serializableReq = req as SerializableRequest;
-        const isLogging = serializableReq.meta?.trackTimings === true;
 
-        if (isLogging) {
-          serializableReq.meta.timings = serializableReq.meta.timings ?? {};
+        if (!serializableReq.meta) {
+          serializableReq.meta = {} as NonNullable<InternalRequest["meta"]>;
+        }
+        if (!serializableReq.meta.timings) {
+          serializableReq.meta.timings = {};
         }
 
-        const start = isLogging ? performance.now() : 0;
+        const start = performance.now();
 
-        const headers = serializableReq.headers as Record<
-          string,
-          string | string[]
-        >;
+        const headers =
+          (serializableReq.headers as Record<string, string | string[]>) || {};
 
         /**
-         * @en Helper to retrieve a header value case-insensitively.
          * @ru Вспомогательная функция для получения значения заголовка без учета регистра.
-         * @param name - The header name.
-         * @returns The header value or undefined.
+         * @en Helper to retrieve a header value case-insensitively.
          */
         const getHeader = (name: string): string | undefined => {
-          if (typeof (headers as any).get === "function") {
-            return (headers as any).get(name);
+          const lowerName = name.toLowerCase();
+          for (const key of Object.keys(headers)) {
+            if (key.toLowerCase() === lowerName) {
+              const val = headers[key];
+              return Array.isArray(val) ? val[0] : val;
+            }
           }
-          const val = headers[name] || headers[name.toLowerCase()];
-          return Array.isArray(val) ? val[0] : val;
+          return undefined;
         };
 
         const contentType = getHeader("content-type");
@@ -114,10 +96,8 @@ export function withSerializer(): HyperPlugin {
           ).toString();
         }
 
-        if (isLogging && serializableReq.meta.timings) {
-          serializableReq.meta.timings.serializationMs =
-            performance.now() - start;
-        }
+        serializableReq.meta.timings.serializationMs =
+          performance.now() - start;
       }
     },
   };
