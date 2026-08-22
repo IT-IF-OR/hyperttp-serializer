@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/index.ts"],
+  "sourcesContent": ["export { withSerializer } from \"./plugin.js\";\nexport type { SerializableRequest, SerializerOptions } from \"./plugin.js\";\n"],
+  "mappings": "aAAA,OAAS,mBAAsB",
+  "names": []
+}
