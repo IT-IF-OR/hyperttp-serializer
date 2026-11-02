@@ -25,7 +25,7 @@ declare module "@hyperttp/types" {
   }
 }
 
-function restInput(request: SendRequest): RestInput {
+function restInput<TInput>(request: SendRequest<TInput>): RestInput {
   return request.input !== null && typeof request.input === "object"
     ? (request.input as RestInput)
     : {};
@@ -50,15 +50,15 @@ function isSerializableObject(body: unknown): body is Record<string, unknown> {
   );
 }
 
-function defaultGetBody(request: SendRequest): unknown {
+function defaultGetBody<TInput>(request: SendRequest<TInput>): unknown {
   return request.protocol === "rest" ? restInput(request).body : undefined;
 }
 
-function defaultShouldSerialize(request: SendRequest): boolean {
+function defaultShouldSerialize<TInput>(request: SendRequest<TInput>): boolean {
   return request.protocol === "rest" && isSerializableObject(defaultGetBody(request));
 }
 
-function defaultSerialize(body: unknown, request: SendRequest): unknown {
+function defaultSerialize<TInput>(body: unknown, request: SendRequest<TInput>): unknown {
   const contentType = getHeader(restInput(request).headers ?? {}, "content-type");
   if (!contentType || contentType.includes("application/json")) return JSON.stringify(body);
   if (contentType.includes("application/x-www-form-urlencoded")) {
@@ -92,6 +92,7 @@ export function withSerializer<TInput = unknown, TSerialized = unknown>(
   return {
     name: "hyperttp-serializer",
     phase: "FORMAT",
+    mode: "blocking",
     enabled: () => true,
     onRequest(request, _pluginCtx, requestCtx): SendRequest<TInput> | void {
       if (!shouldSerialize(request, requestCtx)) return;

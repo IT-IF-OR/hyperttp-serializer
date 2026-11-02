@@ -25,6 +25,14 @@ async function serializeRest(input: RestInput): Promise<SendRequest<RestInput> |
 }
 
 describe("withSerializer", () => {
+  it("runs in the FORMAT phase in blocking mode", () => {
+    const plugin = withSerializer();
+
+    expect(plugin.name).toBe("hyperttp-serializer");
+    expect(plugin.phase).toBe("FORMAT");
+    expect(plugin.mode).toBe("blocking");
+    expect(plugin.enabled?.({})).toBe(true);
+  });
   it("serializes REST input.body as JSON and adds the default header", async () => {
     const input: RestInput = { body: { name: "Ada" }, headers: { accept: "application/json" } };
     const result = await serializeRest(input);
