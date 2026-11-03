@@ -1,2 +1,2 @@
-"use strict";export{withSerializer}from"./plugin.js";
+import{withSerializer as i}from"./plugin.js";export{i as withSerializer};
 //# sourceMappingURL=index.js.map
